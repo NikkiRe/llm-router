@@ -1,0 +1,39 @@
+# Demo stack: the router in front of three simulated backends, with
+# Prometheus scraping the router.
+#
+#   docker compose -f deploy/compose.yaml up --build
+#   curl localhost:8080/v1/chat/completions -d '{"messages":[{"role":"user","content":"hi"}],"stream":true}'
+#   open http://localhost:9091   # Prometheus, try llmrouter_time_to_first_token_seconds
+
+x-fake: &fake
+  build: ..
+  entrypoint: ["/usr/local/bin/fakellm"]
+
+services:
+  fake-a:
+    <<: *fake
+    command: ["-addr", ":8081", "-name", "fake-a", "-load-delay", "3s"]
+  fake-b:
+    <<: *fake
+    command: ["-addr", ":8081", "-name", "fake-b", "-load-delay", "3s"]
+  fake-c:
+    <<: *fake
+    command: ["-addr", ":8081", "-name", "fake-c", "-load-delay", "3s"]
+
+  router:
+    build: ..
+    command: ["-config", "/etc/llmrouter/router.yaml"]
+    volumes:
+      - ./router.yaml:/etc/llmrouter/router.yaml:ro
+    ports:
+      - "8080:8080"
+      - "9090:9090"
+    depends_on: [fake-a, fake-b, fake-c]
+
+  prometheus:
+    image: prom/prometheus:v3.5.0
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    ports:
+      - "9091:9090"
+    depends_on: [router]

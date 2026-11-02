@@ -1,0 +1,9 @@
+listen: ":8080"
+admin_listen: ":9090"
+policy: prefix
+backends:
+  - {name: a, url: "http://fake-a:8081", max_inflight: 4}
+  - {name: b, url: "http://fake-b:8081", max_inflight: 4}
+  - {name: c, url: "http://fake-c:8081", max_inflight: 4}
+health:
+  interval: 1s

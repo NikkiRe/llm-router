@@ -248,7 +248,7 @@ func (p *Proxy) relayStream(w http.ResponseWriter, body io.Reader, b *balancer.B
 		line, err := br.ReadSlice('\n')
 		if len(line) > 0 {
 			if bytes.HasPrefix(line, dataPrefix) && !bytes.HasPrefix(line, doneEvent) {
-				if first {
+				if first && hasToken(bytes.TrimSpace(line[len(dataPrefix):])) {
 					p.metrics.TTFT.WithLabelValues(b.Name).Observe(time.Since(start).Seconds())
 					first = false
 				}
@@ -274,6 +274,31 @@ func (p *Proxy) relayStream(w http.ResponseWriter, body io.Reader, b *balancer.B
 			return usage
 		}
 	}
+}
+
+// hasToken reports whether a stream event carries generated text. Servers
+// may open a stream with an event that only announces the assistant role,
+// and that event must not count as the first token. Only the first few
+// events of a stream are parsed.
+func hasToken(data []byte) bool {
+	var ev struct {
+		Choices []struct {
+			Text  string `json:"text"`
+			Delta struct {
+				Content          string `json:"content"`
+				ReasoningContent string `json:"reasoning_content"`
+			} `json:"delta"`
+		} `json:"choices"`
+	}
+	if json.Unmarshal(data, &ev) != nil {
+		return false
+	}
+	for _, c := range ev.Choices {
+		if c.Text != "" || c.Delta.Content != "" || c.Delta.ReasoningContent != "" {
+			return true
+		}
+	}
+	return false
 }
 
 func relayBody(w http.ResponseWriter, body io.Reader) *openai.Usage {

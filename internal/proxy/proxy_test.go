@@ -375,3 +375,20 @@ func TestModels(t *testing.T) {
 		t.Errorf("status %d body %s", resp.StatusCode, body)
 	}
 }
+
+func TestHasToken(t *testing.T) {
+	cases := map[string]bool{
+		`{"choices":[{"delta":{"role":"assistant"}}]}`:                 false,
+		`{"choices":[{"delta":{"content":""}}]}`:                       false,
+		`{"choices":[{"delta":{"content":"Hi"}}]}`:                     true,
+		`{"choices":[{"delta":{"reasoning_content":"Let me think"}}]}`: true,
+		`{"choices":[{"text":"Once"}]}`:                                true,
+		`{"choices":[],"usage":{"prompt_tokens":3}}`:                   false,
+		`not json`: false,
+	}
+	for in, want := range cases {
+		if got := hasToken([]byte(in)); got != want {
+			t.Errorf("hasToken(%s) = %v, want %v", in, got, want)
+		}
+	}
+}
