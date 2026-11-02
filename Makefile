@@ -25,7 +25,7 @@ bench-fake: build
 bench-llamacpp: build
 	cd bench && uv run python -m llmbench.run --no-build --backend llamacpp --model $(MODEL) \
 		--scenario docs --out results/llamacpp-docs \
-		--instances 2 --slots 2 --docs 6 --doc-words 700 --requests 80 --rate 0.5 --max-tokens 16
+		--instances 2 --slots 2 --docs 12 --doc-words 700 --requests 80 --rate 0.4 --max-tokens 16
 
 demo:
 	docker compose -f deploy/compose.yaml up --build

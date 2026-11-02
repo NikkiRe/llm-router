@@ -61,6 +61,7 @@ type PrefixAware struct {
 	MinMatchRatio float64
 	LoadSlack     int
 
+	next     atomic.Uint64
 	fallback LeastLoaded
 }
 
@@ -72,13 +73,21 @@ func (p *PrefixAware) Pick(req Request, c []*Backend) Decision {
 		minLoad = min(minLoad, b.Inflight())
 	}
 
+	// The scan starts at a rotating offset, so that full ties do not always
+	// go to the first backend in the configuration.
+	start := int(p.next.Add(1)-1) % len(c)
 	var best *Backend
 	bestMatch := 0
-	for _, b := range c {
+	for i := range c {
+		b := c[(start+i)%len(c)]
 		if b.Inflight() > minLoad+p.LoadSlack {
 			continue
 		}
-		if m := b.index.Match(req.Hashes); m > bestMatch {
+		// A longer cached prefix wins. Among equal prefixes the less loaded
+		// backend wins: a prefix that several backends hold, such as a
+		// system prompt shared by every chat, spreads over all of them.
+		m := b.index.Match(req.Hashes)
+		if m > bestMatch || (m > 0 && m == bestMatch && b.Inflight() < best.Inflight()) {
 			best, bestMatch = b, m
 		}
 	}

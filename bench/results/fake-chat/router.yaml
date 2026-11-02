@@ -1,0 +1,11 @@
+listen: '127.0.0.1:18080'
+admin_listen: '127.0.0.1:19090'
+backends:
+  - {name: fake0, url: 'http://127.0.0.1:18101', max_inflight: 4}
+  - {name: fake1, url: 'http://127.0.0.1:18102', max_inflight: 4}
+  - {name: fake2, url: 'http://127.0.0.1:18103', max_inflight: 4}
+  - {name: fake3, url: 'http://127.0.0.1:18104', max_inflight: 4}
+health: {interval: 1s, timeout: 2s}
+prefix: {chunk_size: 256, min_match_ratio: 0.5, load_slack: 2}
+queue_timeout: 120s
+response_header_timeout: 10m

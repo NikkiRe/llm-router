@@ -104,6 +104,32 @@ func TestPrefixAwareLoadSlackBreaksAffinity(t *testing.T) {
 	}
 }
 
+func TestPrefixAwareSpreadsSharedPrefixByLoad(t *testing.T) {
+	bs := newBackends(3, 0)
+	p := NewPool(bs, &PrefixAware{MinMatchRatio: 0.5, LoadSlack: 10}, Thresholds{})
+	system := strings.Repeat("You are a support assistant. ", 10)
+	// Every backend has served the shared system prompt before.
+	for _, b := range bs {
+		b.index.Insert(hashes(system))
+	}
+
+	// New chats match all three equally, so they go by load instead of
+	// piling onto the first backend in the list.
+	seen := map[*Backend]bool{}
+	for i := range 3 {
+		// The first messages differ from their first byte, so no backend
+		// holds more than the system prompt.
+		l := mustAcquire(t, p, Request{Hashes: hashes(system + fmt.Sprintf("%d: hello there", i))})
+		if l.Reason != "prefix" {
+			t.Errorf("reason %q, want prefix: the system prompt is cached", l.Reason)
+		}
+		seen[l.Backend] = true
+	}
+	if len(seen) != 3 {
+		t.Errorf("three new chats landed on %d backends, want 3", len(seen))
+	}
+}
+
 func TestPrefixAwareMinMatchRatio(t *testing.T) {
 	p := NewPool(newBackends(2, 0), &PrefixAware{MinMatchRatio: 0.5, LoadSlack: 10}, Thresholds{})
 	shortShared := "system: be nice. "

@@ -79,7 +79,7 @@ func Default() Config {
 			ChunkSize:     256,
 			CacheChunks:   8192,
 			MinMatchRatio: 0.5,
-			LoadSlack:     4,
+			LoadSlack:     2,
 		},
 		QueueTimeout:          30 * time.Second,
 		Retries:               1,

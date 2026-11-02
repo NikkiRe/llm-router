@@ -198,7 +198,7 @@ def main() -> None:
     ap.add_argument("--think", type=float, default=4.0, help="seconds between turns of a chat")
     ap.add_argument("--max-tokens", type=int, default=32)
     ap.add_argument("--chunk-size", type=int, default=256)
-    ap.add_argument("--slack", type=int, default=4)
+    ap.add_argument("--slack", type=int, default=2)
     ap.add_argument("--seed", type=int, default=1)
     ap.add_argument("--timeout", type=float, default=600)
     ap.add_argument("--ready-timeout", type=float, default=180)

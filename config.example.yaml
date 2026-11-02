@@ -31,7 +31,7 @@ prefix:
   chunk_size: 256       # bytes per prefix chunk (about 64 tokens)
   cache_chunks: 8192    # chunks remembered per backend, about its KV cache size
   min_match_ratio: 0.5  # share of the prompt that must be cached to follow the cache
-  load_slack: 4         # extra requests a cached backend may run over the least loaded one
+  load_slack: 2         # extra requests a cached backend may run over the least loaded one
 
 limits:
   requests_per_second: 0  # per API key; 0 disables

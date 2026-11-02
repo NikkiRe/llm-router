@@ -85,7 +85,7 @@ def chart(summaries: dict[str, dict], path: Path, title: str) -> None:
 
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
-    from matplotlib.ticker import FuncFormatter
+    from matplotlib.ticker import FuncFormatter, NullFormatter
 
     fig, ax = plt.subplots(figsize=(8, 4.5), dpi=150)
     fig.patch.set_facecolor(SURFACE)
@@ -101,15 +101,26 @@ def chart(summaries: dict[str, dict], path: Path, title: str) -> None:
         ax.step(xs, ys, where="post", color=COLORS.get(policy, INK_2), linewidth=2, label=label)
 
     ax.set_xscale("log")
-    ax.xaxis.set_major_formatter(
-        FuncFormatter(lambda v, _: f"{v * 1000:g} ms" if v < 1 else f"{v:g} s")
-    )
+
+    def seconds(v: float, _=None) -> str:
+        return f"{v * 1000:g} ms" if v < 1 else f"{v:g} s"
+
+    def two_and_five(v: float, _=None) -> str:
+        mantissa = v / 10 ** math.floor(math.log10(v))
+        return seconds(v) if round(mantissa) in (2, 5) else ""
+
+    ax.xaxis.set_major_formatter(FuncFormatter(seconds))
+    # On a narrow range the decades alone leave the axis nearly unlabelled,
+    # so label the 2x and 5x minor ticks too; on a wide one they would crowd.
+    lo, hi = ax.get_xlim()
+    narrow = hi / lo < 100
+    ax.xaxis.set_minor_formatter(FuncFormatter(two_and_five) if narrow else NullFormatter())
     ax.set_ylim(0, 101)
     ax.set_xlabel("Time to first token (log scale)", color=INK_2, fontsize=9)
     ax.set_ylabel("Requests, %", color=INK_2, fontsize=9)
     ax.set_title(title, color=INK, fontsize=10, loc="left")
     ax.grid(True, which="major", color=GRID, linewidth=0.8)
-    ax.tick_params(colors=INK_2, labelsize=8)
+    ax.tick_params(which="both", colors=INK_2, labelsize=8)
     for side in ("top", "right"):
         ax.spines[side].set_visible(False)
     for side in ("left", "bottom"):
@@ -120,3 +131,27 @@ def chart(summaries: dict[str, dict], path: Path, title: str) -> None:
     fig.tight_layout()
     fig.savefig(path, facecolor=SURFACE)
     plt.close(fig)
+
+
+def rerender(out: Path) -> None:
+    """Rebuilds summary.md and ttft.png of a finished run from its raw results."""
+    import json
+
+    data = json.loads((out / "summary.json").read_text())
+    setup = data["setup"]
+    summaries = {}
+    for policy, old in data["policies"].items():
+        lines = (out / "raw" / policy / "results.jsonl").read_text().splitlines()
+        results = [Result(**json.loads(line)) for line in lines]
+        wall = old["ok"] / old["throughput"] if old["throughput"] else 0
+        summaries[policy] = summarize(results, wall)
+    n = next(iter(summaries.values()))["requests"]
+    title = f"{setup['backend']}, {setup['scenario']}: {n} requests, {setup['instances']} backends"
+    (out / "summary.md").write_text(markdown(summaries, title))
+    chart(summaries, out / "ttft.png", title)
+
+
+if __name__ == "__main__":
+    import sys
+
+    rerender(Path(sys.argv[1]))
