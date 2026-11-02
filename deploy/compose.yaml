@@ -5,8 +5,11 @@
 #   curl localhost:8080/v1/chat/completions -d '{"messages":[{"role":"user","content":"hi"}],"stream":true}'
 #   open http://localhost:9091   # Prometheus, try llmrouter_time_to_first_token_seconds
 
+# One image holds both binaries. The router service builds it and the
+# simulated backends reuse it, so it is built once rather than four times.
 x-fake: &fake
-  build: ..
+  image: llm-router:demo
+  pull_policy: never
   entrypoint: ["/usr/local/bin/fakellm"]
 
 services:
@@ -22,6 +25,7 @@ services:
 
   router:
     build: ..
+    image: llm-router:demo
     command: ["-config", "/etc/llmrouter/router.yaml"]
     volumes:
       - ./router.yaml:/etc/llmrouter/router.yaml:ro

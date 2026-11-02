@@ -2,8 +2,8 @@
 
 [![ci](https://github.com/NikkiRe/llm-router/actions/workflows/ci.yml/badge.svg)](https://github.com/NikkiRe/llm-router/actions/workflows/ci.yml)
 
-A cache-aware load balancer for OpenAI-compatible LLM servers (llama.cpp, vLLM),
-written in Go.
+A cache-aware load balancer for OpenAI-compatible LLM servers, written in Go and
+tested with llama.cpp.
 
 LLM servers keep the KV cache of prompts they have already processed, so a request
 that starts like an earlier one skips most of its prefill. An ordinary load balancer
@@ -14,10 +14,11 @@ hold its prefix, without letting one instance take all the load.
 
 ## Results
 
-**Two llama.cpp servers with Qwen3-8B (Q4_K_M)** on one Apple M4 Pro: 2 slots each,
-1 GiB host prompt cache each, 80 questions about 12 documents of about 950 tokens at
-0.4 requests/s. Twelve documents do not fit one server's cache but fit both together,
-which is the case cache-aware routing is for.
+**Two llama.cpp servers with Qwen3-8B (Q4_K_M)** on one Apple M4 Pro: 2 slots and
+1 GiB host prompt cache each, 80 questions about 12 documents at 0.4 requests/s, 824
+prompt tokens per request on average. Qwen3-8B keeps 144 KiB of KV per token, so one
+prompt takes about 116 MiB and one server holds 8 or 9 of them in 1 GiB. Twelve
+documents do not fit one server's cache; they fit two.
 
 ![TTFT CDF, llama.cpp](bench/results/llamacpp-docs/ttft.png)
 
@@ -27,11 +28,16 @@ which is the case cache-aware routing is for.
 | least_loaded | 822 ms | 5.34 s | 8.35 s | 1.85 s | 64% | 41, 39 |
 | **prefix** | **229 ms** | **3.72 s** | 8.38 s | **713 ms** | **75%** | 44, 36 |
 
-Prefix routing cut median time to first token 3.7 times and median latency 2.5 times
-against round robin, with load still even. The p99 did not move: it is the first
-request for a document, which no policy can serve from cache, waiting behind other
-prefills on the shared GPU. One prompt of 980 tokens takes 2.96 s to prefill cold and
-23 ms from cache on this machine. With 80 requests the tail percentiles are rough.
+Against round robin, prefix routing cut median time to first token from 847 ms to
+229 ms and median latency from 1.81 s to 713 ms, with load still even. Twelve of the
+80 requests are the first question about their document and miss the cache under any
+policy. Beyond those, round robin missed the cache (less than half the prompt cached)
+16 times and prefix routing 7 times.
+
+The p99 did not move. The slowest requests in every run are the first questions about
+documents at the start, plus requests queued behind them on the shared GPU. On an idle
+server a 980-token prompt took 2.96 s to prefill cold and 23 ms from cache. With 80
+requests, p90 and p99 rest on 8 and 1 requests.
 
 **Simulated backends.** Four [fakellm](internal/fakellm) servers with a KV prefix
 cache, 4 slots each, 4,000 prompt tokens/s prefill and 50 tokens/s decode. Every
@@ -50,7 +56,7 @@ policy gets the same seeded open-loop workload, and backends restart before each
 
 Prefix routing trades even load for cache hits: under light load it keeps traffic on
 the backends that already hold the prefix, within `load_slack` extra requests of the
-least loaded one. In the chat run the fourth backend was rarely needed. Full tables:
+least loaded one. In the chat run the fourth backend got 8 of 360 requests. Full tables:
 [docs](bench/results/fake-docs/summary.md), [chat](bench/results/fake-chat/summary.md).
 
 ## How it works
@@ -66,8 +72,9 @@ flowchart LR
     HC[Health checker] -.->|/health| B1 & B2 & B3
 ```
 
-1. The prompt is cut into 256-byte chunks; each chunk's hash covers the whole prefix
-   before it, so equal hash *i* means equal first *i* chunks.
+1. The prompt is cut into 256-byte chunks. The hash of chunk *i* covers the prompt from
+   its start through chunk *i*, so two prompts with equal hash *i* share their first
+   *i* chunks.
 2. Each backend has an LRU set of the hashes recently sent to it, sized like its KV
    cache. Shared starts of prompts are kept longest.
 3. The `prefix` policy picks the backend holding the longest prefix of the request,
@@ -75,8 +82,8 @@ flowchart LR
    one. If less than `min_match_ratio` of the prompt is cached anywhere, the request
    goes to the least loaded backend.
 4. Each backend takes at most `max_inflight` requests (its slot count). When all are
-   full, requests wait in the router and get `503` with `Retry-After` after
-   `queue_timeout`.
+   full, requests wait in the router; if no slot frees up within `queue_timeout`, the
+   client gets `503` with `Retry-After`.
 
 Also: SSE streaming with flush per event, retries on another backend until the first
 byte is sent, active and passive health checks with fall/rise thresholds,
@@ -115,7 +122,7 @@ Configuration with every option explained: [config.example.yaml](config.example.
 | `llmrouter_prefix_match_ratio` | Share of the prompt the chosen backend was believed to have cached |
 | `llmrouter_routing_decisions_total{reason}` | `prefix`, `least_loaded` or `round_robin` |
 | `llmrouter_tokens_total{kind}` | Prompt, cached and completion tokens from backend usage |
-| `llmrouter_rejected_total{reason}` | Rate limit, queue timeout, no backend, client gone |
+| `llmrouter_rejected_total{reason}` | Requests refused before reaching a backend: rate limit, concurrency cap, bad key, bad body, queue timeout, no backend, client gone |
 | `llmrouter_backend_inflight`, `llmrouter_backend_healthy` | Per-backend state |
 
 ## Benchmark
