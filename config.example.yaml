@@ -1,0 +1,43 @@
+# Router configuration. Every field except backends has a default; see
+# internal/config/config.go.
+
+listen: ":8080"        # OpenAI-compatible API
+admin_listen: ":9090"  # /metrics, /backends, /healthz, /debug/pprof
+
+# round_robin | least_loaded | prefix
+policy: prefix
+
+backends:
+  # Three fakellm instances, as started by `make fake` or docker compose.
+  # For llama.cpp, point these at llama-server instances.
+  - name: a
+    url: http://127.0.0.1:8081
+    max_inflight: 4   # match the server's parallel slots (llama-server -np)
+  - name: b
+    url: http://127.0.0.1:8082
+    max_inflight: 4
+  - name: c
+    url: http://127.0.0.1:8083
+    max_inflight: 4
+
+health:
+  path: /health   # llama-server answers 503 here until the model is loaded
+  interval: 2s
+  timeout: 1s
+  fall: 3         # failed checks before a backend is ejected
+  rise: 2         # passed checks before it gets traffic again
+
+prefix:
+  chunk_size: 256       # bytes per prefix chunk (about 64 tokens)
+  cache_chunks: 8192    # chunks remembered per backend, about its KV cache size
+  min_match_ratio: 0.5  # share of the prompt that must be cached to follow the cache
+  load_slack: 4         # extra requests a cached backend may run over the least loaded one
+
+limits:
+  requests_per_second: 0  # per API key; 0 disables
+  burst: 0
+  max_concurrent: 0       # per API key; 0 disables
+  api_keys: []            # if set, only these keys are accepted
+
+queue_timeout: 30s   # how long a request may wait for a free slot
+retries: 1           # other backends to try if one fails before responding
